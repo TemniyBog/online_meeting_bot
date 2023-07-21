@@ -1,0 +1,4 @@
+aiogram==2.25.1
+SQLAlchemy==2.0.16
+apscheduler-di==0.1.0
+redis==4.5.5
