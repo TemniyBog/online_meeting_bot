@@ -12,10 +12,6 @@ from connecting_bot.my_bot.handlers.admins import register_handlers_admins
 from connecting_bot.my_bot.handlers.initiators import register_handlers_initiators
 from connecting_bot.my_bot.handlers.users import register_handlers_users
 
-
-# def register_all_middlewares(dp):
-#     dp.setup_middleware(...)
-
 def register_all_filters(dp):
     dp.filters_factory.bind(AdminFilter)
 
@@ -31,26 +27,9 @@ async def main():
     bot = Bot(token=BOT_TOKEN)
     storage = RedisStorage2(REDIS_HOST, REDIS_PORT, REDIS_DB)
     dp = Dispatcher(bot, storage=storage)
-    # job_stores = {
-    #     "default": RedisJobStore(
-    #         jobs_key="dispatched_trips_jobs",
-    #         run_times_key="dispatched_trips_running",
-    #         host=REDIS_HOST,
-    #         db=REDIS_DB,
-    #         port=REDIS_PORT
-    #     )
-    # }
-    #
-    # scheduler = ContextSchedulerDecorator(AsyncIOScheduler(jobstores=job_stores))
-    # scheduler.ctx.add_instance(bot, declared_class=Bot)
-    #
-    # console_out = logging.StreamHandler()
-    #
-    #
-    # bot['scheduler'] = scheduler
+
     create_tables()
 
-    # register_all_middlewares(dp)
     register_all_filters(dp)
     register_all_handlers(dp)
 
@@ -66,8 +45,6 @@ async def main():
         await dp.storage.close()
         await dp.storage.wait_closed()
     
-
-
 
 if __name__ == '__main__':
     try:

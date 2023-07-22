@@ -7,7 +7,7 @@ from connecting_bot.my_bot.db.db_commands import my_events, get_categories_list,
 
 callback_data = CallbackData('user_id', 'action')
 
-def admin_start_kb() -> ReplyKeyboardMarkup:
+def kb0() -> ReplyKeyboardMarkup:
     kb = KeyboardButton(text='Подписаться на рассылку')
     kb1 = KeyboardButton(text='Отписаться от рассылки')
     kb2 = KeyboardButton(text='Уже участвую')
@@ -18,14 +18,14 @@ def admin_start_kb() -> ReplyKeyboardMarkup:
     keyboard = ReplyKeyboardMarkup().row(kb, kb1).row(kb2, kb3).row(kb4, kb5)
     return keyboard
 
-def admin_refuse_kb() -> InlineKeyboardMarkup:
+def kb1() -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton('Отказаться от участия в событии', callback_data='adm_refuse_event')],
         [InlineKeyboardButton('Назад к списку событий', callback_data='adm_return_back')]
     ])
     return kb
 
-def admin_agree_or_disagree():
+def kb5():
     kb = InlineKeyboardMarkup(inline_keyboard=[
             [KeyboardButton(text="Принять участие", callback_data='adm_agree')],
             [KeyboardButton(text="Отказаться", callback_data='adm_disagree')]
@@ -33,7 +33,7 @@ def admin_agree_or_disagree():
     return kb
 
 
-def ikb3(id) -> InlineKeyboardMarkup:
+def kb3(id) -> InlineKeyboardMarkup:
     events_id_title = my_events(id)
     buttons_list = list()
     for key, value in events_id_title.items():
@@ -47,7 +47,7 @@ def ikb3(id) -> InlineKeyboardMarkup:
     return kb_events
 
 
-def ikb2(id) -> InlineKeyboardMarkup:
+def kb2(id) -> InlineKeyboardMarkup:
     buttons_list = list()
     categories_list = get_categories_list(id)
     for each in categories_list:
@@ -59,7 +59,7 @@ def ikb2(id) -> InlineKeyboardMarkup:
     return kb_events
 
 
-def ikb4(id, category) -> InlineKeyboardMarkup:
+def kb4(id, category) -> InlineKeyboardMarkup:
     buttons_list = list()
     buttons_dict = get_dict_events(id, category)
     for key, value in buttons_dict.items():
