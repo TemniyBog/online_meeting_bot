@@ -8,12 +8,9 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 from connecting_bot.my_bot.bot_spec import bot, scheduler
 from connecting_bot.my_bot.db.db_commands import get_text, get_users, get_text_for_participants, \
-    get_participants, get_ini_id, delete_initiator_event
+    get_participants, delete_initiator_event
 from connecting_bot.my_bot.zoom.create_meeting import create_meeting_data
 from connecting_bot.my_bot.zoom.delete_meeting import delete_meeting_data
-
-
-# from connecting_bot.my_bot.keyboards.initiator_kb import add_url
 
 
 # рассылка
@@ -52,8 +49,6 @@ async def send_reminder(event_id, ini_id, title, date):
                 logging.info('Пошла рассылочка')
             except Exception:
                 pass
-
-
     else:
         logging.info('Не найдено событие или нет участников. Напоминание не отправлено')
     await bot.send_message(chat_id=ini_id,
@@ -82,17 +77,6 @@ async def check_availability_participants(event_id, ini_id, title):
                                     f'Галя, ОТМЕНА!')
         delete_initiator_event(ini_id, event_id)
 
-# # сообщение инициатору, запрос на ссылку в зум
-# async def request_to_initiator(event_id, ini_id, title):
-#     start_url, join_url, meeting_id = create_meeting_data(title, datetime.datetime.now())
-#     scheduler.add_job(func=delete_meeting_data, trigger='date',
-#                       run_date=datetime.datetime.now() + datetime.timedelta(minutes=1),
-#                       kwargs={'id': meeting_id})
-#     await bot.send_message(chat_id=ini_id, text=f'Через 5 минут начнётся ивент {title}, '
-#                                                  'ваша ссылка на зум в сообщении ниже')
-#     await bot.send_message(chat_id=ini_id, text=f'{start_url}')
-#     await send_url_to_users(event_id, title, join_url)
-
 # отправляем ссылку инициатору и участникам
 async def send_url_to_users(event_id, title, ini_id):
     participant_list = get_participants(event_id)
@@ -104,12 +88,16 @@ async def send_url_to_users(event_id, title, ini_id):
                           run_date=run,
                           kwargs={'meeting_id': meeting_id})
         await bot.send_message(chat_id=ini_id, text=f'Через 5 минут начнётся ивент {title}, '
-                                                    'ваша ссылка на зум в сообщении ниже')
+                                                    'ваша ссылка на зум в сообщении ниже.\n'
+                                                    'После окончания конференции вы можете '
+                                                    'возобновить её по этой же ссылке.')
         await bot.send_message(chat_id=ini_id, text=f'{start_url}')
         for user_id in participant_list:
             try:
                 await bot.send_message(chat_id=user_id, text=f'Через 5 минут начнётся ивент {title}, '
-                                                            'ваша ссылка на зум в сообщении ниже')
+                                                            'ваша ссылка на зум в сообщении ниже.\n'
+                                                            'После окончания конференции вы можете '
+                                                            'возобновить её по этой же ссылке.')
                 await bot.send_message(chat_id=user_id,
                                        text=join_url)
                 await sleep(0.3)
