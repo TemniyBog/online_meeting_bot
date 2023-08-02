@@ -1,33 +1,30 @@
-import logging
 import datetime
+
+import geopy
 import pytz
+import requests
+from loguru import logger
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import sessionmaker
-
-
 from sqlalchemy.ext.declarative import declarative_base
-import logging
-
 
 from connecting_bot.my_bot.db.db_connect import session
 from connecting_bot.my_bot.db.db_sqlalchemy import User, Initiator, Event, Participant, Category, Meeting
 
-logging.basicConfig(level=logging.DEBUG)
-console_out = logging.StreamHandler()
-
 Base = declarative_base()
+
 
 # заносим юзера в базу
 def register_user(message):
     username = message.from_user.username if message.from_user.username else None
-    user = User(user_id=int(message.from_user.id), user_name=(message.from_user.username))
+    user = User(user_id=int(message.from_user.id), user_name=username)
     session.add(user)
     try:
         session.commit()
-        logging.info(f'Пользователь {user.user_name} успешно сохранён в базе')
+        logger.info(f'Пользователь {user.user_name} успешно сохранён в базе')
     except IntegrityError:
         session.rollback()  # откатываем session.add(user)
-        logging.info(f'Пользователь {user.user_name} уже есть в базе')
+        logger.info(f'Пользователь {user.user_name} уже есть в базе')
+
 
 # подписываем юзера
 def subscribe_user(user_id):
@@ -35,10 +32,11 @@ def subscribe_user(user_id):
     user.subscribe = True
     try:
         session.commit()
-        logging.info(f'Пользователь {user.user_name} успешно подписан на рассылку')
+        logger.info(f'Пользователь {user.user_name} успешно подписан на рассылку')
     except IntegrityError:
         session.rollback()  # откатываем session.add(user)
-        logging.info(f'Не удалось подписать пользователя {user.user_name}')
+        logger.info(f'Не удалось подписать пользователя {user.user_name}')
+
 
 # отписываем юзера
 def delete_user(user_id):
@@ -46,10 +44,11 @@ def delete_user(user_id):
     user.subscribe = False
     try:
         session.commit()
-        logging.info(f'user {user.user_name} подписка False')
+        logger.info(f'user {user.user_name} подписка False')
     except IntegrityError:
         session.rollback()  # откатываем session.add(user)
-        logging.info(f'Не удалось {user.user_name} подписка False')
+        logger.info(f'Не удалось {user.user_name} подписка False')
+
 
 # ищем инициатора
 def check_nickname(user_name):
@@ -64,11 +63,12 @@ def check_nickname(user_name):
         session.add(initiator)
         try:
             session.commit()
-            logging.info(f'Успешно создан объект в базе инициатор {user.user_name}')
+            logger.info(f'Успешно создан объект в базе инициатор {user.user_name}')
         except IntegrityError:
             session.rollback()  # откатываем session.add(user)
-            logging.info(f'Не удалось создать объект в базе инициатор {user.user_name}')
+            logger.info(f'Не удалось создать объект в базе инициатор {user.user_name}')
         return int(user.user_id)
+
 
 # проверяем дату
 def check_date(t):
@@ -88,6 +88,7 @@ def check_date(t):
     else:
         return None
 
+
 # проверяем время
 def check_time(t):
     b = None
@@ -99,7 +100,7 @@ def check_time(t):
         r = t.split(b)
         t = r[0] + ':' + r[1]
     else:
-        t = t[:-2] + ':' + t[len(t)-2:]
+        t = t[:-2] + ':' + t[len(t) - 2:]
     try:
         datetime.datetime.strptime(t, '%H:%M')
         return t
@@ -107,45 +108,58 @@ def check_time(t):
     except:
         return None
 
+
 # сохраняем событие
 def save_event(user_id, category, title, about, date, time, number):
-    logging.info(f'{user_id}, {category}, {title}, {about}, {date}, {time}, {number}')
-    t = date + ' ' + time
-    dt = datetime.datetime.strptime(t, '%d-%m-%Y %H:%M')
-    newTimeZone = pytz.timezone('Europe/Moscow')             # мск таймзона
-    msc_offset_aware = datetime.datetime.now(tz=newTimeZone)  # получение местного московского времени
-    msc = msc_offset_aware.replace(tzinfo=None)  # преобразование московского времени в utc
-                                                 # без изменения самих цифр, для сравнения
-    if msc < dt:
-        logging.info(f'Время ещё не прошло')
-        event = Event(user_id=user_id, category=str(category), title=str(title), about=str(about), datetime=dt, number_of_participants=int(number))
-        try:
-            session.add(event)
-            session.commit()
-            logging.info(f'Ивент {event.id} успешно добавлен в базу')
-            return event.id, dt
-        except:
-            session.rollback()  # откатываем session.add(user)
-            logging.info(f'Какие-то проблемы с добавлением ивента {title}')
+    try:
+        t = date + ' ' + time
+        dt = datetime.datetime.strptime(t, '%d-%m-%Y %H:%M')  # дата без часового пояса
+        initiator = session.query(User).filter(User.user_id == user_id).first()
+        initiator_tz = pytz.timezone(initiator.time_zone)  # таймзона инициатора
+        event_with_tz = initiator_tz.localize(dt)  # время ивента с часовым
+        utc_tz = pytz.timezone('UTC')
+        utc_event = event_with_tz.astimezone(utc_tz)  # время ивента по utc
+        utc_now = datetime.datetime.now(pytz.timezone('UTC'))  # текущее время по utc
+        if (utc_event - datetime.timedelta(hours=6)) > utc_now:
+            logger.info(f'Время ещё не прошло')
+            utc_event_str = datetime.datetime.strftime(utc_event,
+                                                       '%d-%m-%Y %H:%M')  # преобразовываем обратно в строку, потому что БД ебёт мозги и сама меняет часовой пояс у utc_event
+            event = Event(user_id=user_id, category=str(category), title=str(title),
+                          about=str(about), date_time=utc_event_str, number_of_participants=int(number))
+            try:
+                session.add(event)
+                session.commit()
+                logger.info(f'Ивент {event.id} успешно добавлен в базу')
+                utc_event = utc_event.strftime('%d-%m-%Y %H:%M')
+                return event.id, utc_event
+            except Exception as err:
+                session.rollback()  # откатываем session.add(user)
+                logger.info(f'Какие-то проблемы с добавлением ивента {title}\n{err}')
+                return False, False
+        else:
+            logger.info(f'Время уже прошло')
             return False, False
-    else:
-        logging.info(f'Время уже прошло')
+    except Exception as err:
+        logger.info(f'save event\n{err}')
         return False, False
 
+
 # получаем текст события
-def get_text(event_id):
+def get_text(event_id, user_id):
     try:
         event = session.query(Event).filter(Event.id == event_id).first()
-        logging.info(f'event {event.id} успешно найден в базе')
-        return f'Событие {event.title}\nВ категории {event.category}\n{event.about}\nСостоится {event.datetime}\nРассчитано на {event.number_of_participants} человек'
-    except Exception:
-        logging.info(f'Какие-то проблемы с поиском ивента {event_id} в базе')
+        user = session.query(User).filter(User.user_id == user_id).first()
+        dt_utc = event.date_time
+        utc_tz = pytz.timezone('UTC')
+        utc_event = utc_tz.localize(dt_utc)  # дата ивента в utc
+        tz = pytz.timezone(user.time_zone)  # таймзона usera
+        our_tz_date = utc_event.astimezone(tz)
+        utc_event_str = datetime.datetime.strftime(our_tz_date, '%d-%m в %H:%M')
+        return f'Событие {event.title}\nВ категории {event.category}\n{event.about}\n' \
+               f'Состоится {utc_event_str}'
+    except Exception as err:
+        logger.info(f'Какие-то проблемы с поиском ивента {event_id} в базе\nERROR {err}')
 
-# возвращаем текст события с количеством участников для инициатора
-def get_ini_text(event_id):
-    participants_list = get_participants(event_id)
-    text1 = get_text(event_id)
-    text = text1 + f'\nНа данный момент на событие записалось {len(participants_list)} человек'
 
 # получаем список юзеров по ивенту
 def get_users(event_id):
@@ -157,15 +171,16 @@ def get_users(event_id):
                                            Event.user_id == user.user_id).first() == None:
                 user_id_list.append(user.user_id)
             else:
-                logging.info(f'По ивенту {event_id} юзер {user.user_id} является инициатором')
+                logger.info(f'По ивенту {event_id} юзер {user.user_id} является инициатором')
         if user_id_list:
-            logging.info(f'СПИСОК ЮЗЕРОВ --- {user_id_list}')
+            logger.info(f'СПИСОК ЮЗЕРОВ --- {user_id_list}')
             return user_id_list
         else:
             return None
     except Exception:
-        logging.info('Какие-то проблемы с поиском юзеров в таблице')
+        logger.info('Какие-то проблемы с поиском юзеров в таблице')
         return None
+
 
 # добавляем пользователя в участники события
 def add_participant(user_id, event_id):
@@ -175,31 +190,32 @@ def add_participant(user_id, event_id):
             participant = Participant(user_id=user_id, event_id=event_id)
             session.add(participant)
             session.commit()
-            logging.info(f'Пользователь добавлен в базу {participant.participant1.user_name}')
+            logger.info(f'Пользователь добавлен в базу {participant.participant1.user_name}')
             return True
         else:
-            logging.info(f'Пользователь {event.initiator.user.user_name} является инициатором '
-                         f'и не был добавлен в участники')
+            logger.info(f'Пользователь {event.initiator.user.user_name} является инициатором '
+                        f'и не был добавлен в участники')
             return False
-    except Exception:
+    except Exception as err:
         session.rollback()
-        logging.info(f'Error Пользователя {user_id} в ивент {event_id} не удалось добавить в базу')
+        logger.info(f'Error Пользователя {user_id} в ивент {event_id} не удалось добавить в базу\n{err}')
         return False
+
 
 # проверяем количество участников по ивенту
 def check_count_of_participants(event_id):
     try:
         event = session.query(Event).filter(Event.id == event_id).first()
         count_of_participants = event.number_of_participants
-        logging.info(f'{event.id} ивент найден')
         count_of_participants_in_table = session.query(Participant).filter(Participant.event_id == event_id).count()
-        if count_of_participants_in_table <= count_of_participants:
+        if count_of_participants_in_table < count_of_participants:
             return True
         else:
             return False
     except Exception:
-        logging.info(f'По такому айди {event_id} ивент не найден')
+        logger.info(f'По такому айди {event_id} ивент не найден')
         return False
+
 
 # получаем список участников по ивенту
 def get_participants(event_id):
@@ -208,119 +224,143 @@ def get_participants(event_id):
         participants = session.query(Participant).filter(Participant.event_id == event_id).all()
         for x in participants:
             id_list.append(x.user_id)
-        logging.info(f'Список участников по {event_id} event успешно достали')
+        logger.info(f'Список участников по {event_id} event успешно достали')
         return id_list
     except Exception:
-        logging.info(f'Не удалось достать список участников по {event_id} event')
+        logger.info(f'Не удалось достать список участников по {event_id} event')
         return False
+
 
 # получаем текст напоминания о событии
-def get_text_for_participants(event_id):
+def get_text_for_participants(event_id, user_id):
     try:
         event = session.query(Event).filter(Event.id == event_id).first()
-        logging.info(f'event {event.id} успешно найден в базе')
-        return f'Напоминание! Через 6 часов состоится\nСобытие {event.title}\nВ категории {event.category}\n{event.about}\n' \
-               f'Состоится {event.datetime}\nРассчитано на {event.number_of_participants} человек'
-    except Exception:
-        logging.info(f'Какие-то проблемы с поиском ивента {event_id} в базе')
+        dt_utc = event.date_time  # дата ивента в utc
+        utc_tz = pytz.timezone('UTC')
+        utc_datetime = utc_tz.localize(dt_utc)
+        user = session.query(User).filter(User.user_id == user_id).first()
+        tz = pytz.timezone(user.time_zone)  # таймзона usera
+        # Конвертировать время в новый часовой пояс
+        our_date = utc_datetime.astimezone(tz)
+        # Формат даты в новом часовом поясе
+        format_date = our_date.strftime("%d-%m в %H:%M")
+
+        logger.info(f'event {event.id} успешно найден в базе')
+        return f'Напоминаю, что {format_date} состоится:\nИвент {event.title}\n' \
+               f'В категории {event.category}\n{event.about}'
+    except Exception as err:
+        logger.info(f'Какие-то проблемы с поиском ивента {event_id} в базе\n{err}')
         return False
 
-# # время напоминания про ивент за 24 часа
-# def get_date(event_id):
-#     try:
-#         event = session.query(Event).filter(Event.id == event_id).first()
-#         date = event.datetime + datetime.timedelta(minutes=1)
-#         logging.info(f'{date} Всё четко со временем напоминания по ивенту {event_id}')
-#         return date
-#     except Exception:
-#         logging.info(f'Какие-то проблемы со временем напоминания по ивенту {event_id}')
-#         return False
 
 # события для юзера
 def get_dict_events(user_id, category):
+    user_id = int(user_id)
     buttons_dict = dict()
     try:
-        newTimeZone = pytz.timezone('Europe/Moscow')
-        msc_offset_aware = datetime.datetime.now(tz=newTimeZone)
-        msc = msc_offset_aware.replace(tzinfo=pytz.utc)
-        logging.info('uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu')
-        logging.info(f'{category}')
+        datetime_now = datetime.datetime.now(pytz.timezone('UTC'))
         events = session.query(Event).filter(Event.category == category).all()
         if events:
-            logging.info(f'{events}')
             for event in events:
-                event_time = event.datetime.replace(tzinfo=pytz.utc)  # объект типа "2023-12-12 02:30:00+00:00"
-                if event_time > msc:
-                    logging.info(f'Время по событию {event.id} подходит')
-                    logging.info(f'{event_time} 00000000000000000 {msc_offset_aware}')
-                    if user_id != event.user_id:
-                        logging.info(f'{user_id} не является инициатором')
+                tz = pytz.timezone("UTC")
+                event_time = tz.localize(event.date_time)
+                if event_time > datetime_now:
+                    logger.info(f'Время по событию {event.id} подходит')
+                    if event.user_id != user_id:
+                        logger.info(f'{user_id} не является инициатором')
                         participant = session.query(Participant).filter(Participant.event_id == event.id,
                                                                         Participant.user_id == user_id).first()
                         if participant == None:
-                            logging.info(f'{user_id} не является участником')
+                            logger.info(f'{user_id} не является участником')
                             button = 'event_' + str(event.id)
                             buttons_dict[event.title] = button
             if buttons_dict:
-                logging.info(f'События в количестве {len(buttons_dict)} '
-                             f'будут предложены пользователю')
+                logger.info(f'События в количестве {len(buttons_dict)} '
+                            f'будут предложены пользователю')
                 return buttons_dict
         else:
-            logging.info(f'Нет событий на данный момент')
+            logger.info(f'Нет событий на данный момент')
             return False
-    except Exception:
-        logging.info(f'Ошибка с составлением списка событий')
+    except Exception as err:
+        logger.info(f'Ошибка с составлением списка событий\n{err}')
         return False
 
-# список событий для юзера или инициатора
+
+# список событий для инициатора
 def get_user_dict_events(user_id, category):
     buttons_dict = dict()
     try:
-        newTimeZone = pytz.timezone('Europe/Moscow')
-        msc_offset_aware = datetime.datetime.now(tz=newTimeZone)
-        msc = msc_offset_aware.replace(tzinfo=pytz.utc)
-        logging.info('uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu')
-        logging.info(f'{category}')
+        now = datetime.datetime.now(pytz.timezone('UTC'))
         events = session.query(Event).filter(Event.category == category).all()
         if events:
-            logging.info(f'{events}')
             for event in events:
-                event_time = event.datetime.replace(tzinfo=pytz.utc)  # объект типа "2023-12-12 02:30:00+00:00"
-                if event_time > msc:
-                    logging.info(f'Время по событию {event.id} подходит')
-                    logging.info(f'{event_time} 00000000000000000 {msc_offset_aware}')
-                    if user_id != event.user_id:
-                        logging.info(f'{user_id} не является инициатором')
+                tz = pytz.timezone("UTC")
+                event_time = tz.localize(event.date_time)
+                if event_time > now:
+                    if event.user_id != user_id:
                         participant = session.query(Participant).filter(Participant.event_id == event.id,
                                                                         Participant.user_id == user_id).first()
                         if participant == None:
-                            logging.info(f'{user_id} не является участником')
                             button = 'usevent_' + str(event.id)
                             buttons_dict[event.title] = button
             if buttons_dict:
-                logging.info(f'События в количестве {len(buttons_dict)} '
-                             f'будут предложены пользователю')
+                logger.info(f'События в количестве {len(buttons_dict)} '
+                            f'будут предложены пользователю')
                 return buttons_dict
         else:
-            logging.info(f'Нет событий на данный момент')
+            logger.info(f'Нет событий на данный момент')
             return False
     except Exception:
-        logging.info(f'Ошибка с составлением списка событий')
+        logger.info(f'Ошибка с составлением списка событий')
         return False
+
+
+# список событий для админов
+def get_admin_dict_events(user_id, category):
+    buttons_dict = dict()
+    try:
+        now = datetime.datetime.now(pytz.timezone('UTC'))
+        events = session.query(Event).filter(Event.category == category).all()
+        if events:
+            for event in events:
+                tz = pytz.timezone("UTC")
+                event_time = tz.localize(event.date_time)
+                if event_time > now:
+                    logger.info(f'Время по событию {event.id} подходит')
+                    if event.user_id != user_id:
+                        logger.info(f'{user_id} не является инициатором')
+                        participant = session.query(Participant).filter(Participant.event_id == event.id,
+                                                                        Participant.user_id == user_id).first()
+                        if participant == None:
+                            logger.info(f'{user_id} не является участником')
+                            button = 'adminevent_' + str(event.id)
+                            buttons_dict[event.title] = button
+            if buttons_dict:
+                logger.info(f'События в количестве {len(buttons_dict)} '
+                            f'будут предложены пользователю')
+                return buttons_dict
+        else:
+            logger.info(f'Нет событий на данный момент')
+            return False
+    except Exception:
+        logger.info(f'Ошибка с составлением списка событий')
+        return False
+
 
 # проверям, является ли он инциатором
 def is_he_initiator(user_id):
     try:
         initiator = session.query(Initiator).filter(Initiator.user_id == user_id).first()
         if initiator != None:
-            logging.info(f'Юзер {user_id} найден в базе иницаторов')
+            logger.info(f'Юзер {user_id} найден в базе иницаторов')
             return True
         else:
-            logging.info(f'Юзер {user_id} не найден в базе иницаторов')
+            logger.info(f'Юзер {user_id} не найден в базе иницаторов')
             return False
     except Exception:
-        logging.info(f'Ошибка с поиском юзера {user_id} в базе иницаторов')
+        logger.info(f'Ошибка с поиском юзера {user_id} в базе иницаторов')
         return False
+
 
 # составляем список инициаторов
 def initiators_list():
@@ -329,14 +369,16 @@ def initiators_list():
         initiators = session.query(Initiator).all()
         for each in initiators:
             i_list.append(each.user_id)
-        logging.info('Составили список инициаторов')
+        logger.info('Составили список инициаторов')
         return i_list
     except Exception:
-        logging.info('Ошибка с составлением списка инициаторов')
+        logger.info('Ошибка с составлением списка инициаторов')
+
 
 # получаем список категорий
 def get_categories_list(user_id):
     categories_list = list()
+
     try:
         categories = session.query(Category).all()
         if categories:
@@ -344,84 +386,81 @@ def get_categories_list(user_id):
                 if get_dict_events(user_id, each.title):
                     categories_list.append(each.title)
             if categories_list:
-                logging.info(f'Нашли {len(categories_list)} категорий в базе')
+                logger.info(f'Нашли {len(categories_list)} категорий в базе')
                 return categories_list
         else:
-            logging.info(f'Не нашли категории')
+            logger.info(f'Не нашли категории')
             return False
-    except Exception:
-        logging.info(f'Ошибка с поиском категорий в базе')
+    except Exception as err:
+        logger.info(f'Ошибка с поиском категорий в базе\n{err}')
         return False
+
 
 # получаем словарь ивентов, в которых участвует юзер
 def my_events(user_id):
     events_id_title = dict()
     try:
-        participant_in_list = session.query(Participant).filter(Participant.user_id == user_id).all()
-        if participant_in_list != None:
-            for each in participant_in_list:
-                newTimeZone = pytz.timezone('Europe/Moscow')
-                msc_offset_aware = datetime.datetime.now(tz=newTimeZone)
-                msc = msc_offset_aware.replace(tzinfo=pytz.utc)
-                event_time = each.event.datetime.replace(tzinfo=pytz.utc)
-                if event_time > msc:
-                    logging.info(f'Время по событию {each.event.title} подходит')
+        participant_list = session.query(Participant).filter(Participant.user_id == user_id).all()
+        if participant_list:
+            for each in participant_list:
+                now_dt = datetime.datetime.now(pytz.timezone('UTC'))
+                tz = pytz.timezone("UTC")
+                event_time = tz.localize(each.event.date_time)
+                if event_time > now_dt:
+                    logger.info(f'Время по событию {each.event.title} подходит')
                     events_id_title[each.event_id] = each.event.title
-                    logging.info(f'We are good')
             if events_id_title:
                 return events_id_title
             else:
                 return False
-    except Exception:
-        logging.info(f'Ошибка с поиском ивентов, в которых участвует юзер, в базе')
+        else:
+            return False
+    except Exception as err:
+        logger.info(f'Ошибка с поиском ивентов, в которых участвует юзер, в базе\n{err}')
         return False
+
 
 # удаляем участника из таблицы участников
 def refuse_user(user_id, event_id):
-    logging.info(f'{type(user_id)}, {type(event_id)}')
     try:
         participant = session.query(Participant).filter(Participant.user_id == int(user_id),
                                                         Participant.event_id == int(event_id)).first()
         if participant != None:
             session.delete(participant)
             session.commit()
-            logging.info(f'Участник {user_id} по {event_id} успешно удалён')
+            logger.info(f'Участник {user_id} по {event_id} успешно удалён')
             return True
         else:
-            logging.info(f'Участник {user_id} по {event_id} не был найден')
+            logger.info(f'Участник {user_id} по {event_id} не был найден')
             return False
     except Exception:
         session.rollback()
-        logging.info(f'С участником {user_id} по event {event_id} возникла проблема')
+        logger.info(f'С участником {user_id} по event {event_id} возникла проблема')
         return False
+
 
 # показываем ивенты для инициатора
 def show_ini_events(user_id):
-    logging.info(f'{user_id}')
     events_id_title = dict()
-    # try:
-    events_list = session.query(Event).filter(Event.user_id == int(user_id)).all()
-    logging.info('check1')
-    if events_list != None:
-        logging.info('check2')
-        for each in events_list:
-            logging.info('check3')
-            newTimeZone = pytz.timezone('Europe/Moscow')
-            msc_offset_aware = datetime.datetime.now(tz=newTimeZone)
-            msc = msc_offset_aware.replace(tzinfo=pytz.utc)
-            our = each.datetime.replace(tzinfo=pytz.utc)
-            if msc < our:
-                logging.info('check4')
-                logging.info(f'Время по событию {each.title} подходит')
-                events_id_title[each.id] = each.title
-        if events_id_title:
-            logging.info('Всё чётко по инициаторским ивентам')
-            return events_id_title
-        else:
-            return False
-    # except Exception:
-    #     logging.info('Ошибка с поиском инициаторских ивентов')
-    #     return False
+    try:
+        events_list = session.query(Event).filter(Event.user_id == user_id).all()
+        if events_list != None:
+            for each in events_list:
+                now = datetime.datetime.now(pytz.timezone('UTC'))
+                tz = pytz.timezone("UTC")
+                event_time = tz.localize(each.date_time)
+                if event_time > now:
+                    logger.info(f'Время по событию {each.title} подходит')
+                    events_id_title[each.id] = each.title
+            if events_id_title:
+                logger.info('Всё чётко по инициаторским ивентам')
+                return events_id_title
+            else:
+                return False
+    except Exception as err:
+        logger.info(f'Ошибка с поиском инициаторских ивентов\n{err}')
+        return False
+
 
 # удаляем ивент инициатора
 def delete_initiator_event(user_id, event_id):
@@ -429,12 +468,13 @@ def delete_initiator_event(user_id, event_id):
         event = session.query(Event).filter(Event.user_id == user_id, Event.id == event_id).first()
         session.delete(event)
         session.commit()
-        logging.info('Ивент успешно удалён')
+        logger.info('Ивент успешно удалён')
         return True
     except Exception:
         session.rollback()
-        logging.info('Ивент не был успешно удалён')
+        logger.info('Ивент не был успешно удалён')
         return False
+
 
 # получаем список всех категорий
 def categories_list():
@@ -446,40 +486,26 @@ def categories_list():
                 categories_list.append(each.title)
             return categories_list
         else:
-            logging.info('Нет категорий')
+            logger.info('Нет категорий')
             return False
     except Exception:
-        logging.info('Проблема с составлением списка категорий')
+        logger.info('Проблема с составлением списка категорий')
         return False
+
 
 # добавляем категорию
 def add_category(title):
     category = Category(title=str(title))
-    logging.info('check1')
     session.add(category)
-    logging.info('check2')
     try:
-        logging.info('check3')
         session.commit()
-        logging.info(f'Категория {category.title} успешно сохранена в базе')
+        logger.info(f'Категория {category.title} успешно сохранена в базе')
         return True
     except IntegrityError:
         session.rollback()  # откатываем session.add(user)
-        logging.info(f'Категория {category.title} не удалось сохранить в базе')
+        logger.info(f'Категория {category.title} не удалось сохранить в базе')
         return False
 
-# получаем айди иницитора по ивенту и время минус 15 минут
-def get_ini_id(event_id):
-    try:
-        event = session.query(Event).filter(Event.id == event_id).first()
-        date = event.datetime + datetime.timedelta(minutes=2)
-        title = event.title
-        logging.info('Успешно получили айди иницатора и время')
-
-        return event.user_id, date, title
-    except Exception:
-        logging.info('Проблема с получением айди инициатора по ивент айди')
-        return None, None, None
 
 # получить данные АПИ зума для создания ивента
 def get_zoom_data():
@@ -489,13 +515,15 @@ def get_zoom_data():
     except Exception as err:
         print('Oshibkaaaa' + str(err))
 
+
 # получить данные АПИ для удаления
 def get_zoom_data_for_delete(meeting_id):
     try:
         meeting = session.query(Meeting).filter(Meeting.meeting_id == meeting_id).first()
         return meeting.account_id, meeting.client_id, meeting.client_secret
     except Exception as err:
-        print('Oshibkaaaa' + str(err))
+        print(f'Oshibkaaaa\n{err}')
+
 
 # добавить айди митинга в таблицу
 def set_zoom_id(account_id, meeting_id):
@@ -504,9 +532,11 @@ def set_zoom_id(account_id, meeting_id):
         meeting.meeting_id = meeting_id
         session.add(meeting)
         session.commit()
-        logging.info('Добавили айди митинга в таблицу')
+        logger.info('Добавили айди митинга в таблицу')
     except Exception as err:
+        session.rollback()  # откатываем session.add
         print(err)
+
 
 # поставить None в таблицу к митингу
 def set_none(id):
@@ -515,6 +545,90 @@ def set_none(id):
         meeting.meeting_id = None
         session.add(meeting)
         session.commit()
-        logging.info('Успешно поставили None в таблице митингу')
+        logger.info('Успешно поставили None в таблице митингу')
     except Exception as err:
-        logging.info('Error set_none ' + str(err))
+        session.rollback()  # откатываем session.ad
+        logger.info(f'Error set_none\n{err}')
+
+
+# проверяем, установлен ли у юзера часовой пояс
+def check_timezone(user_id):
+    try:
+        user = session.query(User).filter(User.user_id == user_id).first()
+        if user == None:
+            return False
+        else:
+            return user.time_zone
+    except Exception as err:
+        logger.info(f"Error:\n{err}")
+        return False
+
+
+# добавить в базу часовой пояс
+def add_timezone(user_id, timezone):
+    try:
+        user = session.query(User).filter(User.user_id == user_id).first()
+        user.time_zone = timezone
+        session.add(user)
+        session.commit()
+        logger.info(f"Успешно добавили часовой пояс")
+    except Exception as err:
+        session.rollback()  # откатываем session.add(user)
+        logger.info(f"Error при добавлении часового пояса:\n{err}")
+
+
+# устанавливаем часовой пояс
+def check_city(city):
+    try:
+        geo = geopy.geocoders.Nominatim(user_agent="govnoezha@rambler.ru")
+        location = geo.geocode(city)  # получаем локацию
+        if location is None:
+            return None, None
+        else:
+            url = f'http://api.geonames.org/timezoneJSON?lat={location.latitude}&lng={location.longitude}&username=KrotBegemot'
+            r = requests.post(url=url)
+            timezone_str = r.json()['timezoneId']  # получаем название часового пояса
+            tz = pytz.timezone(timezone_str)
+            tz_info = datetime.datetime.now(tz=tz).strftime("%z")  # получаем смещение часового пояса
+            tz_info = tz_info[0:3] + ":" + tz_info[3:]  # приводим к формату ±ЧЧ:ММ
+            return timezone_str, tz_info
+    except Exception as err:
+        logger.info(f'{err}')
+
+
+# проверить иницатора на количество уже созданных им ивентов
+def check_ini_events(user_id):
+    count = 0
+    try:
+        events = session.query(Event).filter(Event.user_id == user_id).all()
+        for each in events:
+            tz = pytz.timezone("UTC")
+            our_dt = tz.localize(each.date_time)
+            now = datetime.datetime.now(pytz.timezone('UTC'))
+            if our_dt > now:
+                count += 1
+        if count < 4:
+            return True
+        else:
+            return False
+    except Exception as err:
+        logger.info(f'Проверка инициатора на количество ивентов выдала ошибку\n{err}')
+        return False
+
+
+# текст о событии для инициатора с количеством уже записавшихся на него будущих участников
+def get_text_for_initiator(event_id, user_id):
+    try:
+        event = session.query(Event).filter(Event.id == event_id).first()
+        utc_tz = pytz.timezone('UTC')
+        dt_utc = utc_tz.localize(event.date_time)  # дата ивента в utc
+        user = session.query(User).filter(User.user_id == user_id).first()
+        tz = pytz.timezone(user.time_zone)  # таймзона usera
+        our_date = dt_utc.astimezone(tz)
+        format_date = our_date.strftime("%d-%m в %H:%M")
+        part_count = session.query(Participant).filter(Participant.event_id == event_id).count()
+        return f'Событие {event.title}\nВ категории {event.category}\n{event.about}\n' \
+               f'Состоится {format_date}\n' \
+               f'На данный момент на мероприятие записался(-ось) {part_count} человек.'
+    except Exception as err:
+        logger.info(f'Какие-то проблемы с поиском ивента {event_id} в базе\nERROR {err}')

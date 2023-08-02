@@ -15,9 +15,12 @@ class InitiatorState(StatesGroup):
     agree_disagree = State()
     agree = State()
 
-    #для ветки событий, где он главный в ивенте
+    # для ветки событий, где он главный в ивенте
     show_my_list_events = State()
     make_my_choose = State()
+
+    # ждём город для определения часового пояса
+    wait_for_city = State()
 
     # добавление события
     set_category = State()

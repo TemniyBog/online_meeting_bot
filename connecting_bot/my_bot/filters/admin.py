@@ -1,7 +1,6 @@
 from aiogram.dispatcher.filters import BoundFilter
 
 from connecting_bot.my_bot.config import ADMIN
-from connecting_bot.my_bot.db.db_commands import is_he_initiator
 
 
 class AdminFilter(BoundFilter):
@@ -15,5 +14,3 @@ class AdminFilter(BoundFilter):
             return
         user_id = obj.from_user.id
         return str(user_id) in ADMIN
-
-

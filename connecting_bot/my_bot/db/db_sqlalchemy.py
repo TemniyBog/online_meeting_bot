@@ -1,3 +1,4 @@
+from loguru import logger
 from sqlalchemy import create_engine, Column, ForeignKey, Integer, BigInteger, String, DateTime, Boolean
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import relationship
@@ -13,6 +14,7 @@ class User(Base):
     user_name = Column(String(33), unique=True)
     user_id = Column(BigInteger, primary_key=True, index=True, nullable=False)
     subscribe = Column(Boolean, unique=False, default=False)
+    time_zone = Column(String(50), unique=False, default=None)
     initiator1 = relationship('Initiator', backref='user', uselist=False, cascade="all, delete-orphan")
     participants = relationship('Participant', backref='participant1', uselist=False)
 
@@ -31,7 +33,7 @@ class Event(Base):
     category = Column(String(50), ForeignKey('categories.title'), nullable=False)
     title = Column(String(50))
     about = Column(String(500))
-    datetime = Column(DateTime)
+    date_time = Column(DateTime(timezone=False), default=None)
     number_of_participants = Column(Integer)
     events2 = relationship('Participant', backref='event', single_parent=True, cascade="all, delete-orphan")
 
@@ -42,11 +44,13 @@ class Participant(Base):
     event_id = Column(Integer, ForeignKey('events.id'), unique=False, nullable=False)
     user_id = Column(BigInteger, ForeignKey('users.user_id'), unique=False, nullable=False, index=True)
 
+
 class Category(Base):
     __tablename__ = 'categories'
     id = Column(Integer, primary_key=True, autoincrement=True)
     title = Column(String(50), nullable=False, unique=True)
     event_connect = relationship('Event', backref='connect_event', uselist=False, cascade="all, delete-orphan")
+
 
 class Meeting(Base):
     __tablename__ = 'meetings'
@@ -57,15 +61,17 @@ class Meeting(Base):
     meeting_id = Column(BigInteger, default=None)
 
 
-if __name__ == '__main__':
+def create_tables():
     engine = create_engine(DB_PATH)
     Session = sessionmaker(bind=engine)
     session = Session()
     Base.metadata.create_all(engine)
     session.commit()
+    session.close()
+    logger.info('БД созданы')
 
 
-def create_tables():
+if __name__ == '__main__':
     engine = create_engine(DB_PATH)
     Session = sessionmaker(bind=engine)
     session = Session()

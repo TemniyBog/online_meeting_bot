@@ -1,5 +1,6 @@
 from aiogram.dispatcher.filters.state import StatesGroup, State
 
+
 class AdminState(StatesGroup):
     wait_for = State()
     in_game = State()
@@ -13,6 +14,9 @@ class AdminState(StatesGroup):
     show_events = State()
     agree_disagree = State()
     agree = State()
+
+    # ждём город для определения часового пояса
+    wait_for_city = State()
 
     # для добавления инициаторов
     wait_for_nick = State()
