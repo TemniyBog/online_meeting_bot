@@ -40,7 +40,7 @@ def delete_meeting_data(meeting_id):
             logger.info('Старая встреча удалена')
             set_none(meeting_id)
         else:
-            run = datetime.datetime.now(pytz.timezone('UTC')) + datetime.timedelta(minutes=2)
+            run = datetime.datetime.now(pytz.timezone('UTC')) + datetime.timedelta(minutes=50)
             scheduler.add_job(func=delete_meeting_data, trigger='date',
                               run_date=run,
                               kwargs={'meeting_id': meeting_id},
