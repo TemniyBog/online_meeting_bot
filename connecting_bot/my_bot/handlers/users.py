@@ -297,8 +297,7 @@ async def user_add_timezone(message: types.Message, state: FSMContext):
             await message.answer("Не удалось найти такой город. "
                                  "Попробуйте написать его название латиницей "
                                  "или указать более крупный город поблизости.")
-            await user_check_city(message, state)
-            await UserState.wait_for.set()
+            return
         else:
             add_timezone(message.from_user.id, timezone_str)
             await state.finish()
