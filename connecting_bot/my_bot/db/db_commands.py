@@ -7,6 +7,7 @@ from loguru import logger
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.declarative import declarative_base
 
+from connecting_bot.my_bot.config import GEONAMES_NICK
 from connecting_bot.my_bot.db.db_connect import session
 from connecting_bot.my_bot.db.db_sqlalchemy import User, Initiator, Event, Participant, Category, Meeting
 
@@ -585,7 +586,7 @@ def check_city(city):
         if location is None:
             return None, None
         else:
-            url = f'http://api.geonames.org/timezoneJSON?lat={location.latitude}&lng={location.longitude}&username=KrotBegemot'
+            url = f'http://api.geonames.org/timezoneJSON?lat={location.latitude}&lng={location.longitude}&username={GEONAMES_NICK}'
             r = requests.post(url=url)
             timezone_str = r.json()['timezoneId']  # получаем название часового пояса
             tz = pytz.timezone(timezone_str)
