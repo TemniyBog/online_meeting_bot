@@ -13,5 +13,6 @@ _В широком смысле, мы хотим предоставить воз
 4. SQLAlchemy
 5. APScheduler
 6. Zoom (взаимодействие через API)
+7. GeoNames (взаимодействие через API)
 
 **Peredelano Startup ;)**
